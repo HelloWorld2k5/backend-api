@@ -1,0 +1,6 @@
+.spdx-laravel.json
+.spdx-laravel.spdx
+node_modules
+vendor
+.git
+.env
