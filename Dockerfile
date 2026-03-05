@@ -28,14 +28,9 @@ WORKDIR /var/www
 # Copy toàn bộ source code
 COPY . /var/www
 
-# Tạo user www-data (vì php-cli không có sẵn)
-# UID/GID 33 là chuẩn cho www-data trong hầu hết image PHP
-RUN groupadd -g 33 www-data \
-    && useradd -u 33 -g www-data -m -s /bin/bash www-data \
-    # Chown storage & cache cho user www-data
+RUN mkdir -p /var/www/storage /var/www/bootstrap/cache \
     && chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache \
     && chmod -R 775 /var/www/storage /var/www/bootstrap/cache
-
 # Chạy container bằng user www-data (bảo mật hơn root)
 USER www-data
 

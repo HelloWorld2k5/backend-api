@@ -36,3 +36,4 @@ Thumbs.db
 /public/hot
 .spdx-laravel.json
 .spdx-laravel.spdx
+.composer/
