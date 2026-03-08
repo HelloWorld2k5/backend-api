@@ -6,12 +6,9 @@ use Illuminate\Database\Eloquent\Model;
 
 class PasswordReset extends Model
 {
-    protected $table = 'password_resets';
-
+    protected $table      = 'password_resets';
     protected $primaryKey = 'password_reset_id';
-
-    // Chỉ có created_at, không có updated_at
-    const UPDATED_AT = null;
+    public    $timestamps = false; // Bảng chỉ có created_at, không có updated_at
 
     protected $fillable = [
         'user_id',
@@ -19,27 +16,12 @@ class PasswordReset extends Model
         'otp',
         'expired_at',
         'is_used',
+        'attempts',
+        'created_at',
     ];
 
     protected $casts = [
         'expired_at' => 'datetime',
-        'is_used'    => 'boolean',
+        'created_at' => 'datetime',
     ];
-
-    // ===================== RELATIONSHIPS =====================
-
-    public function role()
-    {
-        return $this->belongsTo(Role::class, 'role_id', 'role_id');
-    }
-
-    // ===================== HELPERS =====================
-
-    /**
-     * Kiểm tra OTP còn hiệu lực không
-     */
-    public function isValid(): bool
-    {
-        return !$this->is_used && $this->expired_at->isFuture();
-    }
 }

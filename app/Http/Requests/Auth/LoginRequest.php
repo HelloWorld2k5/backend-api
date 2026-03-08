@@ -3,26 +3,41 @@
 namespace App\Http\Requests\Auth;
 
 use Illuminate\Foundation\Http\FormRequest;
+// Import thêm lớp Password để viết code sạch hơn (tùy chọn)
+use Illuminate\Validation\Rules\Password;
 
 class LoginRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
-        return false;
+        return true;
     }
 
-    /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
-     */
     public function rules(): array
     {
         return [
-            //
+            'email' => ['required', 'email'],
+            'password' => [
+                'required', 
+                'string', 
+                'min:8', 
+                // Regex: Ít nhất 1 chữ hoa (?=.*[A-Z]) và ít nhất 1 chữ số (?=.*\d)
+                'regex:/^(?=.*[A-Z])(?=.*\d).+$/', 
+            ],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            // Thông báo lỗi khi để trống theo đặc tả
+            'email.required' => 'Vui lòng nhập đầy đủ thông tin.',
+            'email.email' => 'Email không đúng định dạng.',
+            'password.required' => 'Vui lòng nhập đầy đủ thông tin.',
+            
+            // Thông báo lỗi sai định dạng mật khẩu theo đặc tả
+            'password.min' => 'Mật khẩu phải bao gồm ít nhất 8 ký tự, 1 chữ hoa, 1 chữ số.',
+            'password.regex' => 'Mật khẩu phải bao gồm ít nhất 8 ký tự, 1 chữ hoa, 1 chữ số.',
         ];
     }
 }
