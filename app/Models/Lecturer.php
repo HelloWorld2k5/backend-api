@@ -4,10 +4,12 @@ namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
 
 class Lecturer extends Authenticatable
 {
-    use HasApiTokens;
+    use HasApiTokens, HasFactory;
 
     protected $primaryKey = 'lecturer_id';
 
@@ -31,9 +33,9 @@ class Lecturer extends Authenticatable
     ];
 
     protected $casts = [
-        'is_active'   => 'boolean',
+        'is_active' => 'boolean',
         'first_login' => 'boolean',
-        'dob'         => 'date',
+        'dob' => 'date',
     ];
 
     // ===================== RELATIONSHIPS =====================

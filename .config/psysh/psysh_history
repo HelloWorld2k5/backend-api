@@ -1,0 +1,13 @@
+docker exec -w /var/www backend-api composer require laravel/sanctum
+docker exec -w /var/www backend-api composer require laravel/sanctum
+exit
+exit
+$s->createToken('test')->plainTextToken;
+exit
+$s = App\Models\Student::first();
+$s = App\Models\Student::first();
+s->createToken('test')->plainTextToken;
+s->createToken('test')->plainTextToken;
+Student->createToken('test')->plainTextToken;
+$s->createToken('test')->plainTextToken;
+exit

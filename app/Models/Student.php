@@ -4,10 +4,12 @@ namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Student extends Authenticatable
 {
-    use HasApiTokens;
+    use HasApiTokens, HasFactory;
+
 
     protected $primaryKey = 'student_id';
 
@@ -31,17 +33,16 @@ class Student extends Authenticatable
     ];
 
     protected $casts = [
-        'is_active'   => 'boolean',
+        'is_active' => 'boolean',
         'first_login' => 'boolean',
-        'dob'         => 'date',
-        'gpa'         => 'decimal:2',
+        'dob' => 'date',
+        'gpa' => 'decimal:2',
     ];
 
     // ===================== RELATIONSHIPS =====================
-
     public function class()
     {
-        return $this->belongsTo(Classes::class, 'class_id', 'class_id');
+        return $this->belongsTo(\App\Models\Classes::class, 'class_id', 'class_id');
     }
 
     public function capstones()
