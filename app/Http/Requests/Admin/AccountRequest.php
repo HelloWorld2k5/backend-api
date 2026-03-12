@@ -11,7 +11,7 @@ class AccountRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return false;
+        return true;
     }
 
     /**
@@ -21,8 +21,27 @@ class AccountRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [
-            //
-        ];
+        $rules = [];
+
+        // Quy tắc cho POST (tạo tài khoản)
+        if ($this->isMethod('post')) {
+            $rules = [
+                'username' => 'required|string|min:3|max:255',
+                'email' => 'required|email|max:255',
+                'role' => 'required|in:student,lecturer,faculty_staff,admin,company',
+            ];
+        }
+
+        // Quy tắc cho PUT (sửa tài khoản)
+        if ($this->isMethod('put')) {
+            $rules = [
+                'username' => 'required|string|min:3|max:255',
+                'email' => 'required|email|max:255',
+                'status' => 'sometimes|in:active,inactive',
+                'reset_password' => 'sometimes|boolean',
+            ];
+        }
+
+        return $rules;
     }
 }

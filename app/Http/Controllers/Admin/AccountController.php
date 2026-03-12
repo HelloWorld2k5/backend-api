@@ -28,7 +28,7 @@ class AccountController extends Controller
     private const ROLE_PRIMARY_KEYS = [
         'student' => 'student_id',
         'lecturer' => 'lecturer_id',
-        'faculty_staff' => 'faculty_staffstaff_id',
+        'faculty_staff' => 'faculty_staff_id',
         'admin' => 'admin_id',
         'company' => 'company_id',
     ];
@@ -44,7 +44,7 @@ class AccountController extends Controller
     {
         $keyword = $request->query('keyword', '');
         $status = $request->query('status', '');  // active | inactive
-        $role = $request->query('role', '');     // student | lecturer | faculty_staff | admin | company
+        $role = $request->query('role', '');     // student | lecturer | faculty-staff | admin | company
         $perPage = (int) $request->query('per_page', 10);
         $page = (int) $request->query('page', 1);
 
@@ -309,7 +309,7 @@ class AccountController extends Controller
             ], 404);
         }
 
-        // Admin và faculty_staff không có is_active
+        // Admin và faculty-staff không có is_active
         if (!in_array($role, self::HAS_ACTIVE_FIELD)) {
             return response()->json([
                 'success' => false,
@@ -333,7 +333,7 @@ class AccountController extends Controller
         $prefix = match ($role) {
             'student' => 'SV',
             'lecturer' => 'GV',
-            'faculty_staff' => 'faculty_staff',
+            'faculty-staff' => 'faculty_staff',
             'admin' => 'AD',
             'company' => 'DN',
             default => 'USR',

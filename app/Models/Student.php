@@ -40,7 +40,7 @@ class Student extends Authenticatable
     ];
 
     // ===================== RELATIONSHIPS =====================
-    public function class()
+    public function studentClass()
     {
         return $this->belongsTo(\App\Models\Classes::class, 'class_id', 'class_id');
     }
