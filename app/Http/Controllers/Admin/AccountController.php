@@ -12,8 +12,8 @@ use App\Models\Login;
 use App\Models\Role;
 use App\Models\Student;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Http\Request;
 
 class AccountController extends Controller
 {
@@ -56,7 +56,7 @@ class AccountController extends Controller
             : self::ROLE_MODELS;
 
         // Lấy admin hiện tại (nếu có)
-        $currentAdmin = auth()->user();
+        $currentAdmin = $request->user();
 
         foreach ($rolesToSearch as $roleName => $modelClass) {
             $query = $modelClass::query();
@@ -346,7 +346,7 @@ class AccountController extends Controller
 
         // Kiểm tra: Admin không được sửa chính tài khoản của mình
         if ($role === 'admin') {
-            $currentAdmin = auth()->user();
+            $currentAdmin = $request->user();
             if ($currentAdmin && $currentAdmin->admin_id == $id) {
                 return response()->json([
                     'success' => false,
@@ -514,7 +514,7 @@ class AccountController extends Controller
 
         // Kiểm tra: Admin không được xoá chính tài khoản của mình
         if ($role === 'admin') {
-            $currentAdmin = auth()->user();
+            $currentAdmin = $request->user();
             if ($currentAdmin && $currentAdmin->admin_id == $id) {
                 return response()->json([
                     'success' => false,
