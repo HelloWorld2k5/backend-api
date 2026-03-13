@@ -5,10 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Company extends Authenticatable
 {
-    use HasApiTokens;
+    use HasApiTokens, HasFactory;
 
     protected $primaryKey = 'company_id';
 
@@ -30,8 +31,8 @@ class Company extends Authenticatable
     ];
 
     protected $casts = [
-        'is_active'    => 'boolean',
-        'first_login'  => 'boolean',
+        'is_active' => 'boolean',
+        'first_login' => 'boolean',
         'is_partnered' => 'boolean',
     ];
 
