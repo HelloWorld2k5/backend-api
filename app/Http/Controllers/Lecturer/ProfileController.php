@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Lecturer;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Auth\UpdateExpertiseRequest;
+use App\Http\Requests\Lecturer\UpdateExpertiseRequest;
 use App\Http\Resources\UserResource;
 use App\Models\Expertise;
 use App\Models\LecturerExpertise;
