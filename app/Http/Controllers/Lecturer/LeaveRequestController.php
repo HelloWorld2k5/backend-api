@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Lecturer;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Auth\LeaveRequest;
+use App\Http\Requests\Lecturer\LeaveRequest;
 use App\Models\FacultyStaff;
 use App\Models\LecturerRequest;
 use App\Models\Notification;
