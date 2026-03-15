@@ -58,6 +58,7 @@ class AccountController extends Controller
         // Lấy admin hiện tại (nếu có)
         $currentAdmin = $request->user();
 
+
         foreach ($rolesToSearch as $roleName => $modelClass) {
             $query = $modelClass::query();
 
@@ -374,8 +375,8 @@ class AccountController extends Controller
         // Kiểm tra trùng username (trừ chính nó)
         if (
             $modelClass::where('username', $username)
-                ->where($primaryKey, '!=', $id)
-                ->exists()
+            ->where($primaryKey, '!=', $id)
+            ->exists()
         ) {
             return response()->json([
                 'success' => false,
@@ -386,8 +387,8 @@ class AccountController extends Controller
         // Kiểm tra trùng usercode (trừ chính nó)
         if (
             $usercode && $modelClass::where('usercode', $usercode)
-                ->where($primaryKey, '!=', $id)
-                ->exists()
+            ->where($primaryKey, '!=', $id)
+            ->exists()
         ) {
             return response()->json([
                 'success' => false,
