@@ -15,29 +15,49 @@ class TopicController extends Controller
 {
 
     // UC-13: Tìm kiếm đề tài
-    // GET /topics?keyword=&page=&per_page=
+    // GET /topics?keyword=&technology=&description=&expertise_id=&page=&per_page=
     public function index(Request $request)
     {
-        $keyword = trim($request->query('keyword', ''));
-        $perPage = (int) $request->query('per_page', 10);
+        $keyword     = trim($request->query('keyword', ''));
+        $technology  = trim($request->query('technology', ''));
+        $description = trim($request->query('description', ''));
+        $expertiseId = $request->query('expertise_id');
+        $perPage     = max(1, min((int) $request->query('per_page', 10), 100));
 
-        $query = Topic::query();
+        $query = Topic::select('id', 'title', 'technologies', 'description', 'expertise_id', 'created_at');
 
-        // tìm theo keyword
-        if ($keyword) {
-            $query->where('title', 'like', "%$keyword%");
+        // Tìm theo keyword (title)
+        if (strlen($keyword) >= 2) {
+            $escaped = str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], $keyword);
+            $query->where('title', 'like', "%{$escaped}%");
+        }
+
+        // Tìm theo công nghệ
+        if (strlen($technology) >= 2) {
+            $escaped = str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], $technology);
+            $query->where('technologies', 'like', "%{$escaped}%");
+        }
+
+        // Tìm theo mô tả (chính xác)
+        if ($description !== '') {
+            $query->where('description', $description);
+        }
+
+        // Lọc theo expertise (FK)
+        if ($expertiseId) {
+            $query->where('expertise_id', $expertiseId);
         }
 
         $topics = $query->paginate($perPage);
 
         return response()->json([
             'success' => true,
-            'data' => $topics->items(),
-            'meta' => [
-                'total' => $topics->total(),
-                'page' => $topics->currentPage(),
-                'per_page' => $topics->perPage(),
-                'last_page' => $topics->lastPage()
+            'data'    => $topics->items(),
+            'meta'    => [
+                'total'     => $topics->total(),
+                'page'      => $topics->currentPage(),
+                'per_page'  => $topics->perPage(),
+                'last_page' => $topics->lastPage(),
             ]
         ]);
     }
