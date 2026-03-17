@@ -49,7 +49,7 @@ class TopicController extends Controller
             $query->where('expertise_id', $expertiseId);
         }
 
-        $topics = $query->paginate($perPage);
+        $topics = $query->with(['lecturer', 'expertise', 'facultyStaff'])->paginate($perPage);
 
         return response()->json([
             'success' => true,
@@ -70,11 +70,12 @@ class TopicController extends Controller
         $data = $request->validated();
 
         $topic = Topic::create($data);
+        $topic->load(['lecturer', 'expertise', 'facultyStaff']);
 
         return response()->json([
             'success' => true,
             'message' => 'Thêm đề tài thành công',
-            'data' => $topic
+            'data' => new TopicResource($topic)
         ], 201);
     }
 
@@ -87,11 +88,12 @@ class TopicController extends Controller
         $topic = Topic::findOrFail($id);
 
         $topic->update($data);
+        $topic->load(['lecturer', 'expertise', 'facultyStaff']);
 
         return response()->json([
             'success' => true,
             'message' => 'Cập nhật đề tài thành công',
-            'data' => $topic
+            'data' => new TopicResource($topic)
         ]);
     }
 
