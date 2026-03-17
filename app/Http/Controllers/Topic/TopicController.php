@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Topic;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Topic\TopicRequest;
+use App\Http\Resources\TopicResource;
 
 use App\Models\Topic;
 use App\Models\Expertise;
@@ -24,7 +25,7 @@ class TopicController extends Controller
         $expertiseId = $request->query('expertise_id');
         $perPage     = max(1, min((int) $request->query('per_page', 10), 100));
 
-        $query = Topic::select('topic_id', 'title', 'technologies', 'description', 'expertise_id', 'created_at');
+        $query = Topic::query();
 
         // Tìm theo keyword (title)
         if (strlen($keyword) >= 2) {
@@ -48,11 +49,11 @@ class TopicController extends Controller
             $query->where('expertise_id', $expertiseId);
         }
 
-        $topics = $query->paginate($perPage);
+        $topics = $query->with(['lecturer', 'expertise', 'facultyStaff'])->paginate($perPage);
 
         return response()->json([
             'success' => true,
-            'data'    => $topics->items(),
+            'data'    => TopicResource::collection($topics->items()),
             'meta'    => [
                 'total'     => $topics->total(),
                 'page'      => $topics->currentPage(),
@@ -69,11 +70,12 @@ class TopicController extends Controller
         $data = $request->validated();
 
         $topic = Topic::create($data);
+        $topic->load(['lecturer', 'expertise', 'facultyStaff']);
 
         return response()->json([
             'success' => true,
             'message' => 'Thêm đề tài thành công',
-            'data' => $topic
+            'data' => new TopicResource($topic)
         ], 201);
     }
 
@@ -86,11 +88,12 @@ class TopicController extends Controller
         $topic = Topic::findOrFail($id);
 
         $topic->update($data);
+        $topic->load(['lecturer', 'expertise', 'facultyStaff']);
 
         return response()->json([
             'success' => true,
             'message' => 'Cập nhật đề tài thành công',
-            'data' => $topic
+            'data' => new TopicResource($topic)
         ]);
     }
 
