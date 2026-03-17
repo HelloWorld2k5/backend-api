@@ -20,3 +20,24 @@ Route::middleware(['auth:sanctum', 'role:lecturer'])->prefix('lecturer/internshi
     Route::get('/pending-reports', [InternshipController::class, 'getReportsToReview']); // UC 40
     Route::post('/reports/{id}/review', [InternshipController::class, 'reviewReport']);   // UC 40
 });
+
+//UC 36
+Route::middleware(['auth:sanctum', 'role:lecturer'])->prefix('lecturer/internships')->group(function () {
+    // Tìm kiếm trong phạm vi SV hướng dẫn
+    Route::get('/search', [InternshipController::class, 'search']);
+});
+//UC41
+Route::middleware(['auth:sanctum', 'role:lecturer'])->prefix('lecturer/internships')->group(function () {
+
+    // Bước 3: Danh sách sinh viên cần chấm điểm
+    Route::get('/grading-list', [InternshipController::class, 'getStudentsForGrading']);
+
+    // Bước 7: Thực hiện gửi điểm
+    Route::post('/{id}/grade', [InternshipController::class, 'submitGrade']);
+});
+//UC 39
+Route::middleware(['auth:sanctum', 'role:lecturer'])->prefix('lecturer/internships')->group(function () {
+    // UC 39.1
+    Route::get('/pending-cancels', [InternshipController::class, 'getPendingCancelLecturer']);
+    Route::post('/review-cancel/{id}', [InternshipController::class, 'reviewCancelLecturer']);
+});

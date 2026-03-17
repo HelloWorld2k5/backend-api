@@ -8,4 +8,5 @@ Route::prefix('v1')->group(function () {
     require base_path('routes/lecturer.php');
     require base_path('routes/capstone.php');
     require base_path('routes/internship.php');
+    require base_path('routes/business.php');
 });

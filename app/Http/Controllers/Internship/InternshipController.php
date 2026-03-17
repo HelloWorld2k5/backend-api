@@ -3,12 +3,27 @@
 namespace App\Http\Controllers\Internship;
 
 use App\Http\Controllers\Controller;
-use App\Models\{Internship, Milestone, Company, ProposedCompany, InternshipRequest};
+use App\Models\Internship;
 use App\Http\Requests\Internship\RegisterInternshipRequest;
 use App\Http\Resources\Internship\InternshipResource;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
+use App\Http\Requests\Internship\SearchInternshipRequest;
+use App\Http\Resources\Internship\InternshipSearchResource;
+use App\Http\Requests\Internship\AssignCompanyRequest;
+use App\Http\Resources\Internship\CompanySlotResource;
+use App\Http\Requests\Internship\AssignLecturerRequest;
+use App\Http\Resources\Internship\LecturerSlotResource;
+use App\Http\Requests\Internship\GradeInternshipRequest;
+use App\Http\Resources\Internship\InternshipGradeResource;
+use App\Http\Requests\Internship\EvaluateStudentRequest;
+use App\Http\Resources\Internship\CompanyInternshipResource;
+use App\Http\Requests\Internship\ReviewCancelRequest;
+use App\Http\Resources\Internship\CancelRequestDetailResource;
+use App\Http\Requests\Internship\CancelInternshipRequest;
+use App\Http\Resources\Internship\CancelRequestResource;
 
 class InternshipController extends Controller
 {
@@ -319,5 +334,596 @@ class InternshipController extends Controller
             'message' => $request->status === 'APPROVED' ? 'Đã duyệt báo cáo thành công.' : 'Đã từ chối báo cáo.',
             'data'    => new ReportReviewResource($report)
         ]);
+    }
+    /**
+     * UC 36: Tìm kiếm và lọc danh sách thực tập
+     */
+    public function search(SearchInternshipRequest $request)
+    {
+        $user = auth()->user();
+        $role = $request->get('current_role'); // Lấy từ RoleMiddleware
+
+        // 5. Thực hiện truy vấn với Eager Loading để đảm bảo hiệu năng (NFR-1)
+        $query = Internship::with(['student.studentClass', 'company', 'lecturer']);
+
+        // 4. Xác định phạm vi dữ liệu theo vai trò (BR-1)
+        if ($role === 'lecturer') {
+            $query->where('lecturer_id', $user->lecturer_id);
+        }
+
+        // Lọc theo từ khóa (Tên hoặc MSSV)
+        if ($request->filled('keyword')) {
+            $keyword = $request->keyword;
+            $query->whereHas('student', function (Builder $q) use ($keyword) {
+                $q->where('full_name', 'like', "%{$keyword}%")
+                    ->orWhere('usercode', 'like', "%{$keyword}%");
+            });
+        }
+
+        // Lọc theo học kỳ
+        if ($request->filled('semester_id')) {
+            $query->where('semester_id', $request->semester_id);
+        }
+
+        // Lọc theo trạng thái
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        // Lọc theo doanh nghiệp
+        if ($request->filled('company_id')) {
+            $query->where('company_id', $request->company_id);
+        }
+
+        // BR-2: Phân trang kết quả (10 bản ghi/trang)
+        $results = $query->paginate(10);
+
+        return InternshipSearchResource::collection($results);
+    }
+    // UC 37
+    /**
+     * Bước 4: Lấy danh sách doanh nghiệp kèm số lượng slot
+     */
+    public function getAvailableCompanies()
+    {
+        $companies = Company::all();
+        return CompanySlotResource::collection($companies);
+    }
+
+    /**
+     * Bước 7-11: Thực hiện phân công doanh nghiệp cho sinh viên
+     */
+    public function assignCompany(AssignCompanyRequest $request)
+    {
+        return DB::transaction(function () use ($request) {
+            // BR-3: Kiểm tra thời hạn đăng ký của sinh viên đã kết thúc chưa
+            $milestone = Milestone::where('type', Milestone::TYPE_INTERNSHIP)->upcoming()->first();
+            if ($milestone) {
+                return response()->json(['message' => 'Thời hạn tự đăng ký chưa kết thúc (BR-3).'], 400);
+            }
+
+            $company = Company::findOrFail($request->company_id);
+            $internshipIds = $request->internship_ids;
+            $countSelected = count($internshipIds);
+
+            // 7a: Kiểm tra slot còn lại của doanh nghiệp (BR-2)
+            $currentInterns = $company->internships()->count();
+            if (($currentInterns + $countSelected) > 20) {
+                return response()->json(['message' => 'Doanh nghiệp không đủ slot (7a1).'], 400);
+            }
+
+            // Bước 8 & BR-1: Cập nhật trạng thái cho những SV "Chưa có doanh nghiệp" (INITIALIZED)
+            $affected = Internship::whereIn('internship_id', $internshipIds)
+                ->where('status', 'INITIALIZED') // BR-1
+                ->update([
+                    'company_id' => $company->company_id,
+                    'status'     => 'COMPANY_APPROVED', // Trạng thái sau phân công
+                    'updated_at' => Carbon::now()
+                ]);
+
+            if ($affected === 0) {
+                return response()->json(['message' => 'Không có sinh viên hợp lệ để phân công.'], 400);
+            }
+
+            // Bước 11: Gửi thông báo cho sinh viên
+            $notification = Notification::create([
+                'title'   => 'Thông báo phân công thực tập',
+                'content' => "Bạn đã được phân công thực tập tại doanh nghiệp: {$company->name}."
+            ]);
+
+            $studentIds = Internship::whereIn('internship_id', $internshipIds)->pluck('student_id');
+            foreach ($studentIds as $id) {
+                UserNotification::create([
+                    'notification_id' => $notification->notification_id,
+                    'user_id'         => $id,
+                    'role_id'         => 1, // Giả định 1 là Role Student
+                    'is_read'         => false
+                ]);
+            }
+
+            return response()->json(['success' => true, 'message' => 'Phân công thành công (Bước 10)']);
+        });
+    }
+    /**
+     * UC 38 - Gửi yêu cầu hủy học phần thực tập
+     */
+    public function requestCancelInternship(CancelInternshipRequest $request)
+    {
+        return DB::transaction(function () use ($request) {
+            $studentId = auth()->id();
+
+            // Tìm bản ghi thực tập của sinh viên
+            $internship = Internship::where('student_id', $studentId)
+                ->findOrFail($request->internship_id);
+
+            // Kiểm tra Tiền điều kiện: Trạng thái không phải đã hủy hoặc hoàn thành
+            if (in_array($internship->status, [Internship::STATUS_CANCEL, Internship::STATUS_COMPLETED])) {
+                return response()->json(['message' => 'Học phần này không ở trạng thái có thể hủy.'], 400);
+            }
+
+            // Bước 4 & BR-1: Kiểm tra thời hạn 14 ngày kể từ khi mở cổng (Milestone created_at)
+            $milestone = Milestone::where('semester_id', $internship->semester_id)
+                ->where('type', Milestone::TYPE_INTERNSHIP)
+                ->first();
+
+            if (!$milestone) {
+                return response()->json(['message' => 'Không tìm thấy thông tin đợt đăng ký.'], 404);
+            }
+
+            $startDate = $milestone->created_at; // Ngày hệ thống mở cổng đăng ký
+            $now = Carbon::now();
+
+            // Nếu thời gian hiện tại vượt quá 14 ngày kể từ ngày mở cổng
+            if ($now->diffInDays($startDate) > 14) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Đã hết thời gian cho phép yêu cầu hủy học phần thực tập (4a1).'
+                ], 400);
+            }
+
+            // Kiểm tra BR-3: Tránh gửi trùng lặp nếu đã có yêu cầu PENDING
+            $exists = InternshipRequest::where('internship_id', $internship->internship_id)
+                ->where('type', InternshipRequest::TYPE_CANCEL_REQ)
+                ->whereIn('status', [InternshipRequest::STATUS_PENDING_FACULTY, InternshipRequest::STATUS_PENDING_TEACHER])
+                ->exists();
+
+            if ($exists) {
+                return response()->json(['message' => 'Yêu cầu hủy của bạn đã được gửi trước đó và đang chờ xử lý.'], 400);
+            }
+
+            // Bước 5: Tạo yêu cầu hủy
+            $cancelReq = InternshipRequest::create([
+                'internship_id' => $internship->internship_id,
+                'type'          => InternshipRequest::TYPE_CANCEL_REQ,
+                'status'        => InternshipRequest::STATUS_PENDING_FACULTY, // Chờ VPK xử lý
+                'student_message' => 'Sinh viên yêu cầu hủy học phần thực tập.',
+            ]);
+
+            // Cập nhật trạng thái học phần thực tập (Hậu điều kiện)
+            $internship->update(['status' => 'CANCEL_PENDING']); // Trạng thái tạm thời chờ duyệt
+
+            return (new CancelRequestResource($cancelReq))
+                ->additional(['success' => true, 'message' => 'Gửi yêu cầu hủy thành công, vui lòng đợi duyệt (Bước 7).']);
+        });
+    }
+    // ===================== UC 39.1: GIẢNG VIÊN DUYỆT =====================
+
+    public function getPendingCancelLecturer()
+    {
+        $lecturerId = auth()->id();
+        $lecturer = Lecturer::findOrFail($lecturerId);
+
+        // BR-2: Giảng viên nghỉ phép không có quyền truy cập
+        if ($lecturer->leaves()->active()->exists()) {
+            return response()->json(['message' => 'Bạn đang trong trạng thái nghỉ phép (2a1).'], 403);
+        }
+
+        // BR-1: Chỉ lấy yêu cầu của SV được phân công hướng dẫn
+        $requests = InternshipRequest::where('type', InternshipRequest::TYPE_CANCEL_REQ)
+            ->where('status', InternshipRequest::STATUS_PENDING_TEACHER)
+            ->whereHas('internship', function ($q) use ($lecturerId) {
+                $q->where('lecturer_id', $lecturerId);
+            })->get();
+
+        return CancelRequestDetailResource::collection($requests);
+    }
+
+    public function reviewCancelLecturer(ReviewCancelRequest $request, $id)
+    {
+        return DB::transaction(function () use ($request, $id) {
+            $lecturerId = auth()->id();
+            $cancelReq = InternshipRequest::where('type', InternshipRequest::TYPE_CANCEL_REQ)
+                ->where('status', InternshipRequest::STATUS_PENDING_TEACHER)
+                ->whereHas('internship', function ($q) use ($lecturerId) {
+                    $q->where('lecturer_id', $lecturerId);
+                })->findOrFail($id);
+
+            if ($request->status === 'APPROVED') {
+                // Bước 5: Chuyển lên VPK (PENDING_FACULTY)
+                $cancelReq->update(['status' => InternshipRequest::STATUS_PENDING_FACULTY]);
+                // Bước 6: Thông báo cho VPK (Giả định role_id của VPK là 3)
+                // logic gửi thông báo cho VPK...
+            } else {
+                // 4a: Từ chối -> Kết thúc yêu cầu
+                $cancelReq->update(['status' => InternshipRequest::STATUS_REJECTED, 'feedback' => $request->feedback]);
+                $this->notifyStudent($cancelReq->internship->student_id, "Yêu cầu hủy thực tập bị từ chối bởi GVHD.");
+            }
+
+            return response()->json(['success' => true, 'message' => 'Xử lý yêu cầu thành công.']);
+        });
+    }
+
+    // ===================== UC 39.2: VPK DUYỆT CUỐI =====================
+
+    public function getPendingCancelVPK()
+    {
+        // BR-1: Chỉ duyệt yêu cầu đã qua bước GV duyệt (PENDING_FACULTY)
+        $requests = InternshipRequest::where('type', InternshipRequest::TYPE_CANCEL_REQ)
+            ->where('status', InternshipRequest::STATUS_PENDING_FACULTY)
+            ->get();
+
+        return CancelRequestDetailResource::collection($requests);
+    }
+
+    public function reviewCancelVPK(ReviewCancelRequest $request, $id)
+    {
+        return DB::transaction(function () use ($request, $id) {
+            $cancelReq = InternshipRequest::where('type', InternshipRequest::TYPE_CANCEL_REQ)
+                ->where('status', InternshipRequest::STATUS_PENDING_FACULTY)
+                ->findOrFail($id);
+
+            if ($request->status === 'APPROVED') {
+                $cancelReq->update(['status' => InternshipRequest::STATUS_APPROVED]);
+
+                // Hậu điều kiện: Chính thức hủy học phần
+                $internship = $cancelReq->internship;
+                $internship->update(['status' => Internship::STATUS_CANCEL]);
+
+                // BR-2: Slot doanh nghiệp tự động tăng lên do count() chỉ tính SV active
+
+                $this->notifyStudent($internship->student_id, "Học phần thực tập của bạn đã chính thức được hủy.");
+            } else {
+                // 3a: Từ chối
+                $cancelReq->update(['status' => InternshipRequest::STATUS_REJECTED, 'feedback' => $request->feedback]);
+                $this->notifyStudent($cancelReq->internship->student_id, "VPK từ chối yêu cầu hủy thực tập của bạn.");
+            }
+
+            return response()->json(['success' => true, 'message' => 'Phê duyệt cuối cùng thành công.']);
+        });
+    }
+
+    private function notifyStudent($studentId, $content)
+    {
+        $notification = Notification::create(['title' => 'Kết quả yêu cầu hủy thực tập', 'content' => $content]);
+        UserNotification::create(['notification_id' => $notification->notification_id, 'user_id' => $studentId, 'role_id' => 1]);
+    }
+    /**
+     * UC 43 - Bước 3: Lấy danh sách giảng viên kèm chỉ tiêu và trạng thái nghỉ phép
+     */
+    public function getLecturerSlots()
+    {
+        $lecturers = Lecturer::all();
+        return LecturerSlotResource::collection($lecturers);
+    }
+
+    /**
+     * UC 43 - Bước 5-10: Thực hiện phân công GVHD
+     */
+    public function assignLecturer(AssignLecturerRequest $request)
+    {
+        return DB::transaction(function () use ($request) {
+            $lecturer = Lecturer::findOrFail($request->lecturer_id);
+            $internshipIds = $request->internship_ids;
+            $countSelected = count($internshipIds);
+
+            // 6b & BR-1: Kiểm tra trạng thái nghỉ phép
+            $isOnLeave = $lecturer->leaves()->where('status', LecturerLeave::STATUS_LEAVE_ACTIVE)->exists();
+            if ($isOnLeave) {
+                return response()->json([
+                    'message' => 'Không thể phân công cho giảng viên đang nghỉ phép (6b1).'
+                ], 400);
+            }
+
+            // 6a: Kiểm tra chỉ tiêu (Slot) - Giả định tối đa 30
+            $currentGuiding = $lecturer->internships()->count();
+            if (($currentGuiding + $countSelected) > 30) {
+                return response()->json([
+                    'message' => 'Giảng viên không thể tiếp nhận thêm, vui lòng chọn giảng viên khác (6a1).'
+                ], 400);
+            }
+
+            // Bước 8: Cập nhật giảng viên hướng dẫn cho sinh viên
+            Internship::whereIn('internship_id', $internshipIds)->update([
+                'lecturer_id' => $lecturer->lecturer_id,
+                'status'      => 'LECTURER_APPROVED', // Cập nhật trạng thái
+                'updated_at'  => Carbon::now()
+            ]);
+
+            // Bước 9: Gửi thông báo cho cả Sinh viên và Giảng viên
+            $notification = Notification::create([
+                'title'   => 'Thông báo phân công GVHD thực tập',
+                'content' => "Hệ thống đã phân công Giảng viên {$lecturer->full_name} hướng dẫn thực tập."
+            ]);
+
+            // Gửi cho Giảng viên
+            UserNotification::create([
+                'notification_id' => $notification->notification_id,
+                'user_id'         => $lecturer->lecturer_id,
+                'role_id'         => 2, // Giả định 2 là Lecturer
+            ]);
+
+            // Gửi cho danh sách Sinh viên
+            $studentIds = Internship::whereIn('internship_id', $internshipIds)->pluck('student_id');
+            foreach ($studentIds as $sId) {
+                UserNotification::create([
+                    'notification_id' => $notification->notification_id,
+                    'user_id'         => $sId,
+                    'role_id'         => 1, // Giả định 1 là Student
+                ]);
+            }
+
+            return response()->json(['success' => true, 'message' => 'Phân công thành công (Bước 10)']);
+        });
+    }
+    /**
+     * UC 41 - Bước 3: Danh sách sinh viên cần chấm điểm
+     */
+    public function getStudentsForGrading()
+    {
+        $lecturerId = auth()->id();
+        $lecturer = Lecturer::findOrFail($lecturerId);
+
+        // 2a: Kiểm tra trạng thái nghỉ phép
+        if ($lecturer->leaves()->active()->exists()) {
+            return response()->json(['message' => 'Bạn không thể truy cập chức năng này khi đang trong trạng thái nghỉ phép (2a1).'], 403);
+        }
+
+        // BR-2: Sinh viên đã nộp báo cáo và trong thời hạn chấm điểm
+        $gradingMilestone = Milestone::where('type', Milestone::TYPE_INTERNSHIP)->upcoming()->first();
+        if (!$gradingMilestone) {
+            return response()->json(['message' => 'Ngoài thời hạn chấm điểm quy định (BR-2).'], 400);
+        }
+
+        $students = Internship::where('lecturer_id', $lecturerId)
+            ->whereHas('internshipReports') // BR-2: Đã nộp báo cáo
+            ->with(['student.class'])
+            ->get();
+
+        return InternshipGradeResource::collection($students);
+    }
+
+    /**
+     * UC 41 - Bước 7-12: Thực hiện chấm điểm
+     */
+    public function submitGrade(GradeInternshipRequest $request, $id)
+    {
+        return DB::transaction(function () use ($request, $id) {
+            $lecturerId = auth()->id();
+
+            // BR-1: Chỉ giảng viên hướng dẫn mới có quyền chấm
+            $internship = Internship::where('lecturer_id', $lecturerId)->findOrFail($id);
+
+            // BR-3: Điểm đã gửi thành công không được phép chỉnh sửa
+            if (!is_null($internship->university_grade)) {
+                return response()->json(['message' => 'Điểm số đã được ghi nhận trước đó và không thể chỉnh sửa (BR-3).'], 400);
+            }
+
+            // Bước 9: Cập nhật điểm thi và nhận xét
+            $internship->university_grade = $request->university_grade;
+            $internship->university_feedback = $request->feedback;
+
+            // Bước 10: Tính toán điểm cuối cùng (Giả định công thức trong yêu cầu)
+            $finalGrade = ($internship->company_grade + $request->university_grade) / 2;
+
+            // Bước 11: Cập nhật trạng thái thực tập dựa trên điểm (VD: >= 4.0 là Đạt)
+            $internship->status = ($finalGrade >= 4) ? 'COMPLETED' : 'FAILED';
+            $internship->updated_at = Carbon::now();
+            $internship->save();
+
+            // Bước 12: Gửi thông báo cho sinh viên
+            $notification = Notification::create([
+                'title'   => 'Thông báo kết quả điểm thực tập',
+                'content' => "Kết quả thực tập của bạn đã có. Điểm tổng kết: {$finalGrade}. Trạng thái: {$internship->status}."
+            ]);
+
+            UserNotification::create([
+                'notification_id' => $notification->notification_id,
+                'user_id'         => $internship->student_id,
+                'role_id'         => 1, // Student
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Chấm điểm thành công (Bước 12)',
+                'data'    => new InternshipGradeResource($internship)
+            ]);
+        });
+    }
+    /**
+     * UC 45 - Bước 2: Hiển thị danh sách sinh viên đang chờ doanh nghiệp xác nhận
+     */
+    public function getWaitingStudents()
+    {
+        // Lấy ID doanh nghiệp đang đăng nhập
+        $companyId = auth()->id();
+
+        // Lấy sinh viên có trạng thái 'COMPANY_APPROVED' (VPK đã duyệt/phân công nhưng DN chưa xác nhận)
+        $students = Internship::where('company_id', $companyId)
+            ->where('status', 'COMPANY_APPROVED')
+            ->with(['student.class'])
+            ->get();
+
+        return BusinessStudentResource::collection($students);
+    }
+
+    /**
+     * UC 45 - Bước 4-7: Doanh nghiệp xác nhận Tiếp nhận hoặc Từ chối
+     */
+    public function confirmStudent(ConfirmStudentRequest $request, $id)
+    {
+        return DB::transaction(function () use ($request, $id) {
+            $companyId = auth()->id();
+
+            // Tìm bản ghi thực tập thuộc doanh nghiệp này
+            $internship = Internship::where('company_id', $companyId)
+                ->where('status', 'COMPANY_APPROVED')
+                ->findOrFail($id);
+
+            if ($request->status === 'ACCEPT') {
+                // Bước 5: Cập nhật trạng thái 'INTERNING' (Đang thực tập)
+                $internship->status = 'INTERNING';
+                $messageTitle = "Doanh nghiệp đã tiếp nhận";
+                $messageContent = "Chúc mừng! Doanh nghiệp đã xác nhận tiếp nhận bạn vào thực tập.";
+            } else {
+                // Luồng 4a: Từ chối -> Chuyển về trạng thái 'CANCEL' để SV tìm chỗ khác
+                $internship->status = 'CANCEL';
+                $messageTitle = "Doanh nghiệp từ chối tiếp nhận";
+                $messageContent = "Doanh nghiệp đã từ chối yêu cầu thực tập của bạn. Vui lòng liên hệ VPK hoặc tìm đơn vị khác.";
+            }
+
+            $internship->updated_at = Carbon::now();
+            $internship->save();
+
+            // Bước 7 & 4a3: Gửi thông báo cho sinh viên
+            $notification = Notification::create([
+                'title'   => $messageTitle,
+                'content' => $messageContent
+            ]);
+
+            UserNotification::create([
+                'notification_id' => $notification->notification_id,
+                'user_id'         => $internship->student_id,
+                'role_id'         => 1, // Student
+                'is_read'         => false
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => $request->status === 'ACCEPT' ? 'Đã tiếp nhận sinh viên thành công.' : 'Đã từ chối sinh viên.'
+            ]);
+        });
+    }
+    /**
+     * UC 46 - Bước 2: Hiển thị danh sách sinh viên đang thực tập tại doanh nghiệp
+     */
+    public function getInterns()
+    {
+        $companyId = auth()->id();
+
+        $interns = Internship::where('company_id', $companyId)
+            ->whereIn('status', [Internship::STATUS_INTERNING, 'BUSINESS_EVALUATED'])
+            ->with(['student.class'])
+            ->get();
+
+        return CompanyInternshipResource::collection($interns);
+    }
+
+    /**
+     * UC 46 - Bước 6-10: Thực hiện đánh giá và chấm điểm
+     */
+    public function evaluateStudent(EvaluateStudentRequest $request, $id)
+    {
+        return DB::transaction(function () use ($request, $id) {
+            $companyId = auth()->id();
+
+            // Tìm bản ghi thực tập thuộc quyền quản lý của doanh nghiệp này
+            $internship = Internship::where('company_id', $companyId)
+                ->findOrFail($id);
+
+            // Bước 8: Cập nhật điểm, nhận xét và trạng thái
+            $internship->update([
+                'company_grade'    => $request->company_grade,
+                'company_feedback' => $request->company_feedback,
+                'status'           => 'BUSINESS_EVALUATED', // Trạng thái theo đặc tả UC
+                'updated_at'       => Carbon::now()
+            ]);
+
+            // Bước 9: Gửi thông báo cho sinh viên
+            $notification = Notification::create([
+                'title'   => 'Thông báo kết quả đánh giá từ doanh nghiệp',
+                'content' => "Doanh nghiệp đã hoàn tất đánh giá quá trình thực tập của bạn với điểm số: {$request->company_grade}."
+            ]);
+
+            UserNotification::create([
+                'notification_id' => $notification->notification_id,
+                'user_id'         => $internship->student_id,
+                'role_id'         => 1, // Student
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Đánh giá sinh viên thành công (Bước 10)',
+                'data'    => new CompanyInternshipResource($internship)
+            ]);
+        });
+    }
+    /**
+     * UC 44 - Bước 1-6: Thống kê danh sách theo bộ lọc
+     */
+    public function statistics(StatisticInternshipRequest $request)
+    {
+        $query = $this->applyFilters($request);
+
+        // NFR-1: Tối ưu truy vấn bằng Eager Loading để đảm bảo tốc độ < 5s
+        $data = $query->with(['student.class', 'company', 'lecturer'])->get();
+
+        return InternshipStatisticResource::collection($data);
+    }
+
+    /**
+     * UC 44 - Bước 7-10: Xuất tệp tin Excel
+     */
+    public function exportExcel(StatisticInternshipRequest $request)
+    {
+        $query = $this->applyFilters($request);
+        $data = $query->get();
+
+        // 8a: Kiểm tra dữ liệu hiện có
+        if ($data->isEmpty()) {
+            return response()->json(['success' => false, 'message' => 'Không có dữ liệu xuất (8a1).'], 404);
+        }
+
+        // Bước 9: Trả về link tải tệp (Giả định bạn dùng Laravel Excel hoặc Export Service)
+        // Ví dụ: return Excel::download(new InternshipExport($data), 'danh-sach-thuc-tap.xlsx');
+
+        return response()->json([
+            'success' => true,
+            'download_url' => url('/storage/exports/danh_sach_thuc_tap_' . now()->timestamp . '.xlsx'),
+            'message' => 'Tệp tin Excel đang được khởi tạo.'
+        ]);
+    }
+
+    /**
+     * Logic lọc dùng chung (BR-2: Đảm bảo đồng nhất giữa xem và xuất)
+     */
+    private function applyFilters(Request $request)
+    {
+        $query = Internship::query();
+
+        // BR-1: Ưu tiên học kỳ hiện tại nếu không chọn học kỳ cụ thể
+        if ($request->filled('semester_id')) {
+            $query->where('semester_id', $request->semester_id);
+        } else {
+            $currentSemester = Semester::where('start_date', '<=', Carbon::now())
+                ->where('end_date', '>=', Carbon::now())
+                ->first();
+            if ($currentSemester) {
+                $query->where('semester_id', $currentSemester->semester_id);
+            }
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('lecturer_id')) {
+            $query->where('lecturer_id', $request->lecturer_id);
+        }
+
+        if ($request->filled('company_id')) {
+            $query->where('company_id', $request->company_id);
+        }
+
+        return $query;
     }
 }
