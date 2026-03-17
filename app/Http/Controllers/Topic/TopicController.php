@@ -19,7 +19,7 @@ class TopicController extends Controller
     public function index(Request $request)
     {
         $keyword = trim($request->query('keyword', ''));
-        $perPage = (int) $request->query('per_page', 10);
+        $perPage = (int)$request->query('per_page', 10);
 
         $query = Topic::query();
 

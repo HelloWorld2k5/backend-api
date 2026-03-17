@@ -49,7 +49,7 @@ class UserResource extends JsonResource
                 : null,
             'email' => $this->email,
             'gpa' => $this->gpa,
-            
+            'current_topic' => $this->getStudentStatuses($this->student_id)['capstone'] ?? null,
         ];
     }
 
@@ -191,28 +191,26 @@ class UserResource extends JsonResource
     // HELPER: Trạng thái sinh viên
     // Trả về trạng thái đồ án + thực tập đang hoạt động
     // ════════════════════════════════════════
-    // private function getStudentStatuses(int $studentId): array
-    // {
-    //     $capstone = Capstone::where('student_id', $studentId)
-    //         ->whereNotIn('status', ['COMPLETED', 'FAILED', 'CANCEL'])
-    //         ->latest('created_at')
-    //         ->first();
+    private function getStudentStatuses(int $studentId): array
+    {
+        $capstone = Capstone::with(['topic.lecturer'])->where('student_id', $studentId)
+            ->whereNotIn('status', ['COMPLETED', 'FAILED', 'CANCEL'])
+            ->latest('created_at')
+            ->first();
 
-    //     $internship = Internship::where('student_id', $studentId)
-    //         ->whereNotIn('status', ['COMPLETED', 'FAILED', 'CANCEL'])
-    //         ->latest('created_at')
-    //         ->first();
+        // $internship = Internship::where('student_id', $studentId)
+        //     ->whereNotIn('status', ['COMPLETED', 'FAILED', 'CANCEL'])
+        //     ->latest('created_at')
+        //     ->first();
 
-    //     return [
-    //         'capstone' => $capstone ? [
-    //             'capstone_id' => $capstone->capstone_id,
-    //             'status'      => $capstone->status,
-    //         ] : null,
+        return [
+            'capstone' => $capstone ? [
+                'capstone_id' => $capstone->capstone_id,
+                'status'      => $capstone->status,
+                'topic'       => $capstone->topic,
+            ] : null,
 
-    //         'internship' => $internship ? [
-    //             'internship_id' => $internship->internship_id,
-    //             'status'        => $internship->status,
-    //         ] : null,
-    //     ];
-    // }
+            'internship' => null,
+        ];
+    }
 }
