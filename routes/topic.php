@@ -1,10 +1,7 @@
 <?php
 
-<<<<<<< HEAD
-use App\Http\Controllers\TopicController;
-=======
+// use App\Http\Controllers\TopicController;
 use App\Http\Controllers\Topic\TopicController;
->>>>>>> 9c12bc72fd9521140bfcf8dd724e509d15b7252d
 use Illuminate\Support\Facades\Route;
 
 
