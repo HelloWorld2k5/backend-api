@@ -36,6 +36,7 @@ php artisan key:generate --ansi 2>/dev/null || true
 # Clear cache cũ
 php artisan config:clear
 php artisan cache:clear
+php artisan config:cache
 
 # Migrate
 echo "🔄 Đang chạy migrate..."
